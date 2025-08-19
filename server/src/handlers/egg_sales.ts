@@ -1,62 +1,174 @@
+import { db } from '../db';
+import { eggSalesTable } from '../db/schema';
 import { type CreateEggSalesInput, type UpdateEggSalesInput, type EggSales } from '../schema';
+import { eq, gte, lte, and, sum } from 'drizzle-orm';
+
+// Helper function to format date for database (YYYY-MM-DD)
+const formatDateForDB = (date: Date): string => {
+  return date.toISOString().split('T')[0];
+};
+
+// Helper function to convert database result to schema format
+const convertEggSaleResult = (dbResult: any): EggSales => ({
+  ...dbResult,
+  sale_date: new Date(dbResult.sale_date), // Convert string back to Date
+  price_per_egg: parseFloat(dbResult.price_per_egg),
+  total_price: parseFloat(dbResult.total_price)
+});
 
 export async function createEggSales(input: CreateEggSalesInput): Promise<EggSales> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is creating a new egg sales record and persisting it in the database.
-    // It should calculate total_price as quantity * price_per_egg.
-    const totalPrice = input.quantity * input.price_per_egg;
-    return Promise.resolve({
-        id: 1,
-        sale_date: input.sale_date,
+  try {
+    // Calculate total price
+    const total_price = input.quantity * input.price_per_egg;
+
+    // Insert egg sales record
+    const result = await db.insert(eggSalesTable)
+      .values({
+        sale_date: formatDateForDB(input.sale_date),
         quality: input.quality,
         quantity: input.quantity,
-        price_per_egg: input.price_per_egg,
-        total_price: totalPrice,
-        created_at: new Date()
-    } as EggSales);
+        price_per_egg: input.price_per_egg.toString(),
+        total_price: total_price.toString()
+      })
+      .returning()
+      .execute();
+
+    return convertEggSaleResult(result[0]);
+  } catch (error) {
+    console.error('Egg sales creation failed:', error);
+    throw error;
+  }
 }
 
 export async function getEggSales(): Promise<EggSales[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is fetching all egg sales records from the database.
-    return Promise.resolve([]);
+  try {
+    const results = await db.select()
+      .from(eggSalesTable)
+      .execute();
+
+    return results.map(convertEggSaleResult);
+  } catch (error) {
+    console.error('Failed to fetch egg sales:', error);
+    throw error;
+  }
 }
 
 export async function getEggSalesById(id: number): Promise<EggSales | null> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is fetching a specific egg sales record by ID from the database.
-    return Promise.resolve(null);
+  try {
+    const results = await db.select()
+      .from(eggSalesTable)
+      .where(eq(eggSalesTable.id, id))
+      .execute();
+
+    if (results.length === 0) {
+      return null;
+    }
+
+    return convertEggSaleResult(results[0]);
+  } catch (error) {
+    console.error('Failed to fetch egg sale by ID:', error);
+    throw error;
+  }
 }
 
 export async function updateEggSales(input: UpdateEggSalesInput): Promise<EggSales> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating an existing egg sales record in the database.
-    // It should recalculate total_price if quantity or price_per_egg changes.
-    return Promise.resolve({
-        id: input.id,
-        sale_date: new Date(),
-        quality: 'A',
-        quantity: 500,
-        price_per_egg: 0.25,
-        total_price: 125.00,
-        created_at: new Date()
-    } as EggSales);
+  try {
+    // Build update object with optional fields
+    const updateData: any = {};
+    
+    if (input.sale_date !== undefined) {
+      updateData.sale_date = formatDateForDB(input.sale_date);
+    }
+    if (input.quality !== undefined) {
+      updateData.quality = input.quality;
+    }
+    if (input.quantity !== undefined) {
+      updateData.quantity = input.quantity;
+    }
+    if (input.price_per_egg !== undefined) {
+      updateData.price_per_egg = input.price_per_egg.toString();
+    }
+
+    // If quantity or price_per_egg changed, recalculate total_price
+    if (input.quantity !== undefined || input.price_per_egg !== undefined) {
+      // Get current values for calculation
+      const current = await getEggSalesById(input.id);
+      if (!current) {
+        throw new Error('Egg sale record not found');
+      }
+
+      const newQuantity = input.quantity !== undefined ? input.quantity : current.quantity;
+      const newPricePerEgg = input.price_per_egg !== undefined ? input.price_per_egg : current.price_per_egg;
+      
+      updateData.total_price = (newQuantity * newPricePerEgg).toString();
+    }
+
+    // Update egg sales record
+    const result = await db.update(eggSalesTable)
+      .set(updateData)
+      .where(eq(eggSalesTable.id, input.id))
+      .returning()
+      .execute();
+
+    if (result.length === 0) {
+      throw new Error('Egg sale record not found');
+    }
+
+    return convertEggSaleResult(result[0]);
+  } catch (error) {
+    console.error('Egg sales update failed:', error);
+    throw error;
+  }
 }
 
 export async function deleteEggSales(id: number): Promise<void> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is deleting an egg sales record from the database.
-    return Promise.resolve();
+  try {
+    const result = await db.delete(eggSalesTable)
+      .where(eq(eggSalesTable.id, id))
+      .execute();
+
+    if (result.rowCount === 0) {
+      throw new Error('Egg sale record not found');
+    }
+  } catch (error) {
+    console.error('Egg sales deletion failed:', error);
+    throw error;
+  }
 }
 
 export async function getTotalRevenueByDateRange(startDate: Date, endDate: Date): Promise<number> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is calculating total revenue from egg sales within a date range.
-    return Promise.resolve(0);
+  try {
+    const result = await db.select({
+      total: sum(eggSalesTable.total_price)
+    })
+      .from(eggSalesTable)
+      .where(and(
+        gte(eggSalesTable.sale_date, formatDateForDB(startDate)),
+        lte(eggSalesTable.sale_date, formatDateForDB(endDate))
+      ))
+      .execute();
+
+    const totalRevenue = result[0]?.total;
+    return totalRevenue ? parseFloat(totalRevenue) : 0;
+  } catch (error) {
+    console.error('Failed to calculate total revenue:', error);
+    throw error;
+  }
 }
 
 export async function getEggSalesByDateRange(startDate: Date, endDate: Date): Promise<EggSales[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is fetching egg sales records within a specific date range.
-    return Promise.resolve([]);
+  try {
+    const results = await db.select()
+      .from(eggSalesTable)
+      .where(and(
+        gte(eggSalesTable.sale_date, formatDateForDB(startDate)),
+        lte(eggSalesTable.sale_date, formatDateForDB(endDate))
+      ))
+      .execute();
+
+    return results.map(convertEggSaleResult);
+  } catch (error) {
+    console.error('Failed to fetch egg sales by date range:', error);
+    throw error;
+  }
 }

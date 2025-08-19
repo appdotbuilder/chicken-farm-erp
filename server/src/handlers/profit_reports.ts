@@ -1,40 +1,101 @@
+import { db } from '../db';
+import { eggSalesTable, feedConsumptionsTable, otherExpensesTable } from '../db/schema';
 import { type ProfitReportInput, type ProfitReport } from '../schema';
+import { gte, lte, and } from 'drizzle-orm';
+import { sum, sql } from 'drizzle-orm';
 
 export async function generateProfitReport(input: ProfitReportInput): Promise<ProfitReport> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is generating a profit report for a specific date range.
-    // It should calculate:
-    // - Total revenue from egg sales
-    // - Total feed consumption cost
-    // - Total other expenses
-    // - Total profit (revenue - feed cost - other expenses)
-    return Promise.resolve({
-        total_revenue: 10000.00,
-        total_feed_cost: 6000.00,
-        total_other_expenses: 1500.00,
-        total_profit: 2500.00,
-        period_start: input.period_start,
-        period_end: input.period_end
-    } as ProfitReport);
+  try {
+    const [totalRevenue, totalFeedCost, totalOtherExpenses] = await Promise.all([
+      calculateTotalRevenue(input.period_start, input.period_end),
+      calculateTotalFeedCost(input.period_start, input.period_end),
+      calculateTotalOtherExpenses(input.period_start, input.period_end)
+    ]);
+
+    const totalProfit = totalRevenue - totalFeedCost - totalOtherExpenses;
+
+    return {
+      total_revenue: totalRevenue,
+      total_feed_cost: totalFeedCost,
+      total_other_expenses: totalOtherExpenses,
+      total_profit: totalProfit,
+      period_start: input.period_start,
+      period_end: input.period_end
+    };
+  } catch (error) {
+    console.error('Profit report generation failed:', error);
+    throw error;
+  }
 }
 
 export async function calculateTotalRevenue(startDate: Date, endDate: Date): Promise<number> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is calculating total revenue from egg sales within a date range.
-    // This will be used by generateProfitReport.
-    return Promise.resolve(0);
+  try {
+    const result = await db
+      .select({
+        total: sum(eggSalesTable.total_price)
+      })
+      .from(eggSalesTable)
+      .where(
+        and(
+          gte(eggSalesTable.sale_date, startDate.toISOString().split('T')[0]),
+          lte(eggSalesTable.sale_date, endDate.toISOString().split('T')[0])
+        )
+      )
+      .execute();
+
+    // Convert numeric result to number, handle null case
+    const total = result[0]?.total;
+    return total ? parseFloat(total) : 0;
+  } catch (error) {
+    console.error('Revenue calculation failed:', error);
+    throw error;
+  }
 }
 
 export async function calculateTotalFeedCost(startDate: Date, endDate: Date): Promise<number> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is calculating total feed consumption cost within a date range.
-    // This will be used by generateProfitReport.
-    return Promise.resolve(0);
+  try {
+    const result = await db
+      .select({
+        total: sum(feedConsumptionsTable.cost)
+      })
+      .from(feedConsumptionsTable)
+      .where(
+        and(
+          gte(feedConsumptionsTable.consumption_date, startDate.toISOString().split('T')[0]),
+          lte(feedConsumptionsTable.consumption_date, endDate.toISOString().split('T')[0])
+        )
+      )
+      .execute();
+
+    // Convert numeric result to number, handle null case
+    const total = result[0]?.total;
+    return total ? parseFloat(total) : 0;
+  } catch (error) {
+    console.error('Feed cost calculation failed:', error);
+    throw error;
+  }
 }
 
 export async function calculateTotalOtherExpenses(startDate: Date, endDate: Date): Promise<number> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is calculating total other expenses within a date range.
-    // This will be used by generateProfitReport.
-    return Promise.resolve(0);
+  try {
+    const result = await db
+      .select({
+        total: sum(otherExpensesTable.amount)
+      })
+      .from(otherExpensesTable)
+      .where(
+        and(
+          gte(otherExpensesTable.expense_date, startDate.toISOString().split('T')[0]),
+          lte(otherExpensesTable.expense_date, endDate.toISOString().split('T')[0])
+        )
+      )
+      .execute();
+
+    // Convert numeric result to number, handle null case
+    const total = result[0]?.total;
+    return total ? parseFloat(total) : 0;
+  } catch (error) {
+    console.error('Other expenses calculation failed:', error);
+    throw error;
+  }
 }
